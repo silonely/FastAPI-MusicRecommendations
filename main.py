@@ -94,11 +94,11 @@ async def getAuthorizationCode(code:str = None):
 
     if code is not None: 
         set_key('./.env', "AUTHORIZATION_CODE", code)
-        print("Direct to localhost:8000/google.auth/")
+        
         return RedirectResponse("http://localhost:8000/google.auth")
     
     if code is None:
-        print("Direct to spotify authorize page to get spotify auth code")
+        
         endpoint = "https://accounts.spotify.com/authorize"
         params = {
             "response_type": "code", 
@@ -122,7 +122,7 @@ async def index():
 
 
 async def getAccessTokenWithScope():
-    print("get spotify access token")
+    
     endpoint = 'https://accounts.spotify.com/api/token'
     data = {
         "grant_type": "authorization_code", 
@@ -140,7 +140,7 @@ async def getAccessTokenWithScope():
 
         set_key("./.env", "ACCESS_TOKEN", content["access_token"])
     else:
-        print("Fail to get spotify access token, redirect to 127.0.0.1:8000")
+        
         return RedirectResponse("http://localhost:8000")
     return 
 
@@ -239,7 +239,6 @@ async def getSpotifyRecommendations(limit:int = 10, market:str = "JP"):
 
 @app.get("/google.auth")
 def googleOauth2():
-    print("now at google.auth")
     # Use the client_secret.json file to identify the application requesting
     # authorization. The client ID (from that file) and access scopes are required.
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
@@ -265,7 +264,7 @@ def googleOauth2():
 
 @app.get("/oauth2callback")
 def oauthCallback(code:str = None):
-    print("now at oauthCallback")
+    
     if code is None:
         auth_url = ('https://accounts.google.com/o/oauth2/v2/auth?response_type=code'
                 '&client_id={}&redirect_uri={}&scope={}').format(GOOGLE_CLIENT_ID, GOOGLE_REDIRECT_URI, GOOGLE_SCOPE)
