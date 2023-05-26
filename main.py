@@ -48,7 +48,7 @@ def getHTMLResponse(items:dict):
                 flex-direction: column;
                 justify-content: center;
                 align-items: center;
-                row-gap: 8px;">
+                row-gap: 10px;">
                 <img src={imageURL}>
                 <span>{title}</span>
             </a>
@@ -80,48 +80,39 @@ def getAccessTokenWithoutScope():
 
 # https://developer.spotify.com/documentation/web-api/tutorials/code-flow
 @app.get("/")
-async def getAuthorizationCode(code:str = None):
-    """
-    User Authorization Query Params
-    ---
-    'response_type': 'Required'
-    'client_id': 'Required'
-    'redirect_uri': 'Required'
-    'state': 'Optional'
-    'scope': 'Optional'
-    'show_dialog': 'Optional'
-    """
+def getAuthorizationCode():
+    endpoint = "https://accounts.spotify.com/authorize"
+    params = {
+        "response_type": "code", 
+        "client_id": CLIENT_ID, 
+        "redirect_uri": REDIRECT_URI, 
+        "scope": (" ".join(SCOPE)).lstrip()
+    }
 
-    if code is not None: 
+    auth_url = urlParamCombiner(endpoint, params)
+    return RedirectResponse(auth_url)
+
+@app.get("/callback")
+async def redirectGoogleAuth(code:str=None):
+    if code is not None:
         set_key('./.env', "AUTHORIZATION_CODE", code)
-        
         return RedirectResponse("http://localhost:8000/google.auth")
-    
-    if code is None:
-        
-        endpoint = "https://accounts.spotify.com/authorize"
-        params = {
-            "response_type": "code", 
-            "client_id": CLIENT_ID, 
-            "redirect_uri": REDIRECT_URI, 
-            "scope": (" ".join(SCOPE)).lstrip()
-        }
-
-        auth_url = urlParamCombiner(endpoint, params)
-        return RedirectResponse(auth_url)
+    else:
+        return RedirectResponse("http://localhost:8000")
 
 @app.get("/index")
-async def index():
-    await getAccessTokenWithScope()
-    spotifyRecommends = await getSpotifyRecommendations()
-    youtubeRecommends = await getYoutubeRecommends()
-    htmlResponse = "<div>"
-    htmlResponse += getHTMLResponse(spotifyRecommends)
-    htmlResponse += getHTMLResponse(youtubeRecommends)
-    return HTMLResponse(htmlResponse+"</div>")
+async def index(state:str=None):
+    if state == "done":
+        spotifyRecommends = await getSpotifyRecommendations()
+        youtubeRecommends = await getYoutubeRecommends()
+        htmlResponse = ""
+        htmlResponse += "<div>"+getHTMLResponse(spotifyRecommends)+"</div>"
+        htmlResponse += "<div>"+getHTMLResponse(youtubeRecommends)+"</div>"
+        return HTMLResponse(htmlResponse)
+    else:
+        return RedirectResponse('http://localhost:8000')
 
-
-async def getAccessTokenWithScope():
+def getAccessTokenWithScope():
     
     endpoint = 'https://accounts.spotify.com/api/token'
     data = {
@@ -137,12 +128,10 @@ async def getAccessTokenWithScope():
         content = response.content
         content = json.loads(content)
         # --- End ---
-
         set_key("./.env", "ACCESS_TOKEN", content["access_token"])
+        return None
     else:
-        
-        return RedirectResponse("http://localhost:8000")
-    return 
+        return getAuthorizationCode()
 
 # Perhaps need to apply random generate seed artist/genres/track
 async def getTopItems(time_range: str="medium_term", limit: int=10, offset: int=0):
@@ -195,7 +184,9 @@ async def getTopItems(time_range: str="medium_term", limit: int=10, offset: int=
             "seed_genres": (" ".join(genres)).lstrip(),
             "seed_tracks": seedTrack
         }
-    return "Fail To Get Spotify Top Info."
+    elif artistsResponse.status_code==401:
+        RedirectResponse("http://localhost:8000")
+
 
 async def getSpotifyRecommendations(limit:int = 10, market:str = "JP"):
     """
@@ -283,7 +274,7 @@ def oauthCallback(code:str = None):
         content = json.loads(content)
         set_key("./.env", "GOOGLE_ACCESS_TOKEN", content["access_token"])
         set_key("./.env", "GOOGLE_REFRESH_TOKEN", content["refresh_token"])
-        return RedirectResponse("http://localhost:8000/index")
+        return RedirectResponse("http://localhost:8000/index?state=done")
 
 async def getYTSubscriptions():
     params = {
@@ -334,14 +325,14 @@ async def searchChannel(channelId:str = None):
         videoIDs = []
         for i in range(min(3, len(result))):
             videoID = result[i]["id"]["videoId"]
-            if await checkVideoCategory(videoID):
+            if checkVideoCategory(videoID):
                 videoIDs.append(videoID)
             else: return None
         return videoIDs
     else:
         return "Error at search channel"
 
-async def checkVideoCategory(videoID:str = None):
+def checkVideoCategory(videoID:str = None):
     if videoID is None: return "videoID is empty."
     params = {
         "part": "snippet",
@@ -356,7 +347,7 @@ async def checkVideoCategory(videoID:str = None):
     if response.status_code==200:
         content = response.content
         content = json.loads(content)
-        if content["items"]["snippet"]["categoryId"]==10:
+        if content["items"][0]["snippet"]["categoryId"]=='10':
             return True
     return False
 
@@ -379,9 +370,9 @@ async def searchRelatedVideo(videoID:str = None):
         content = response.content
         content = json.loads(content)
         searchResult = content["items"]
-        recommends = {"videos": []}
+        recommends = {"items": []}
         youtube = "https://www.youtube.com/watch?v="
-        for i in range(min(2, len(searchResult))):
+        for i in range(min(3, len(searchResult))):
             recommend = dict()
             info = searchResult[i]
             
@@ -403,6 +394,8 @@ async def getYoutubeRecommends():
             for videoID in videoIDs:
                 recommendVideos = await searchRelatedVideo(videoID)
                 for item in recommendVideos["items"]:
-                    recommends["items"].append(item)
+                    if item not in recommends["items"]:
+                        recommends["items"].append(item)
         else: break
+    print(recommends)
     return recommends
